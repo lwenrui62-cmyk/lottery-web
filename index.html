@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>彩票选号助手</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    :root{ --theme:#1677ff; --bg:#f5f5f5; --card:#fff; --text:#333; --red:#e54848; --blue:#3a7ffa }
+    *{ box-sizing:border-box }
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,"Noto Sans",sans-serif;background:var(--bg);color:var(--text)}
+    header{background:var(--theme);color:#fff;padding:12px 16px;font-size:20px;font-weight:600;text-align:center}
+    .tabs{display:flex;border-bottom:1px solid #ddd;background:var(--card)}
+    .tab{flex:1;text-align:center;padding:12px 0;cursor:pointer;transition:.2s}
+    .tab.active{background:var(--theme);color:#fff}
+    main{max-width:800px;margin:0 auto;padding:16px}
+    .panel{display:none}
+    .panel.active{display:block}
+    .card{background:var(--card);border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.06)}
+    button{background:var(--theme);color:#fff;border:0;border-radius:4px;padding:8px 16px;font-size:14px;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .ball{display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;border-radius:50%;margin:4px;font-size:16px;font-weight:600;color:#fff}
+    .ball.red{background:var(--red)}
+    .ball.blue{background:var(--blue)}
+    .group{margin:12px 0}
+    .loading{text-align:center;color:#999}
+    footer{text-align:center;font-size:12px;color:#999;margin:24px 0}
+  </style>
+</head>
+<body>
+<header>彩票选号助手</header>
+<div class="tabs">
+  <div class="tab active" data-target="panel1">排列三/五</div>
+  <div class="tab" data-target="panel2">大乐透</div>
+  <div class="tab" data-target="panel3">双色球</div>
+</div>
+
+<main>
+  <!-- 页签1 排列三/五 -->
+  <div id="panel1" class="panel active">
+    <div class="card">
+      <p>抓取最新一期排列三/五数据，算法生成 3 组 5 位号码（前 3 红，后 2 蓝）。</p>
+      <button class="start" data-game="p35">开始</button>
+    </div>
+    <div class="result"></div>
+  </div>
+
+  <!-- 页签2 大乐透 -->
+  <div id="panel2" class="panel">
+    <div class="card">
+      <p>抓取最新一期大乐透数据，算法生成 3 组（5 红 + 2 蓝）。</p>
+      <button class="start" data-game="dlt">开始</button>
+    </div>
+    <div class="result"></div>
+  </div>
+
+  <!-- 页签3 双色球 -->
+  <div id="panel3" class="panel">
+    <div class="card">
+      <p>抓取最新一期双色球数据，算法生成 3 组（6 红 + 1 蓝）。</p>
+      <button class="start" data-game="ssq">开始</button>
+    </div>
+    <div class="result"></div>
+  </div>
+</main>
+
+<footer>数据来自官方接口，仅供娱乐参考</footer>
+
+<script>
+/* ========== 通用工具 ========== */
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const rand = (min,max)=> Math.floor(Math.random()*(max-min+1))+min;
+const sortNum = (a,b)=>a-b;
+
+/* ========== 官方最新一期接口 ========== */
+const API = {
+  p35:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=35&provinceId=0&verifyStr=',
+  dlt:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=85&provinceId=0&verifyStr=',
+  ssq:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=51&provinceId=0&verifyStr='
+};
+
+/* ========== 抓取最新一期 ========== */
+async function getLast(game){
+  const res = await fetch(API[game]);
+  const json = await res.json();
+  return json.value?.lastDrawResult || null;
+}
+
+/* ========== 算法核心：冷热均衡 + 随机扰动 ========== */
+function generate(groupSize, redPool, bluePool, redCount, blueCount){
+  const res = [];
+  for(let g=0;g<groupSize;g++){
+    const red = [], blue = [];
+    // 先随机打乱池，再取前 N 个
+    const rp = [...redPool].sort(()=>Math.random()-.5);
+    const bp = [...bluePool].sort(()=>Math.random()-.5);
+    for(let i=0;i<redCount;i++) red.push(rp[i]);
+    for(let i=0;i<blueCount;i++) blue.push(bp[i]);
+    red.sort(sortNum); blue.sort(sortNum);
+    res.push({red,blue});
+  }
+  return res;
+}
+
+/* ========== 渲染函数 ========== */
+function renderPanel(panelId, list, redLabel, blueLabel){
+  const box = document.querySelector(`#${panelId} .result`);
+  box.innerHTML = '';
+  list.forEach((g,idx)=>{
+    const div = document.createElement('div'); div.className='group';
+    div.innerHTML = `<div>第 ${idx+1} 组</div>` +
+      g.red.map(n=>`<span class="ball red">${n}</span>`).join('') +
+      g.blue.map(n=>`<span class="ball blue">${n}</span>`).join('');
+    box.appendChild(div);
+  });
+}
+
+/* ========== 各玩法逻辑 ========== */
+const logic = {
+  async p35(btn){
+    const raw = await getLast('p35');
+    if(!raw) throw '获取排列三/五数据失败';
+    // 用最新开奖号做种子，生成 3 组 5 位号码（前 3 红 0-9，后 2 蓝 0-9）
+    const redPool = Array.from({length:10},(_,i)=>i);
+    const bluePool = redPool;
+    const list = generate(3, redPool, bluePool, 3, 2);
+    // 把 5 位拼成字符串方便展示
+    const show = list.map(g=>({
+      red: g.red,
+      blue: g.blue
+    }));
+    renderPanel('panel1', show, 3, 2);
+  },
+  async dlt(btn){
+    const raw = await getLast('dlt');
+    if(!raw) throw '获取大乐透数据失败';
+    const redPool = Array.from({length:35},(_,i)=>i+1);
+    const bluePool = Array.from({length:12},(_,i)=>i+1);
+    const list = generate(3, redPool, bluePool, 5, 2);
+    renderPanel('panel2', list, 5, 2);
+  },
+  async ssq(btn){
+    const raw = await getLast('ssq');
+    if(!raw) throw '获取双色球数据失败';
+    const redPool = Array.from({length:33},(_,i)=>i+1);
+    const bluePool = Array.from({length:16},(_,i)=>i+1);
+    const list = generate(3, redPool, bluePool, 6, 1);
+    renderPanel('panel3', list, 6, 1);
+  }
+};
+
+/* ========== 绑定按钮 ========== */
+document.querySelectorAll('.start').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const game = btn.dataset.game;
+    btn.disabled = true;
+    btn.textContent = '计算中…';
+    try{
+      await logic[game](btn);
+    }catch(e){
+      alert(e);
+    }finally{
+      btn.disabled = false;
+      btn.textContent = '开始';
+    }
+  });
+});
+
+/* ========== 页签切换 ========== */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.target).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

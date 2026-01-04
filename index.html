@@ -62,27 +62,27 @@
     <div class="result"></div>
   </div>
 </main>
-
 <footer>数据来自官方接口，仅供娱乐参考</footer>
 
 <script>
+/* ========== 代理地址：改成你自己的 Vercel 域名 ========== */
+const BASE = 'https://lottery-proxy-pqwzly1qh-lwenrui62s-projects.vercel.app ';  // ← 替换为你的
+const API = {
+  p35: `${BASE}/api/draw/35`,
+  dlt: `${BASE}/api/draw/85`,
+  ssq: `${BASE}/api/draw/51`
+};
+
 /* ========== 通用工具 ========== */
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 const rand = (min,max)=> Math.floor(Math.random()*(max-min+1))+min;
 const sortNum = (a,b)=>a-b;
 
-/* ========== 官方最新一期接口 ========== */
-const API = {
-  p35:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=35&provinceId=0&verifyStr=',
-  dlt:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=85&provinceId=0&verifyStr=',
-  ssq:'https://webapi.sporttery.cn/gateway/lottery/getDigitalDrawResultV1?gameNo=51&provinceId=0&verifyStr='
-};
-
 /* ========== 抓取最新一期 ========== */
 async function getLast(game){
   const res = await fetch(API[game]);
-  const json = await res.json();
-  return json.value?.lastDrawResult || null;
+  if(!res.ok) throw '网络错误';
+  return res.json();
 }
 
 /* ========== 算法核心：冷热均衡 + 随机扰动 ========== */
@@ -90,7 +90,6 @@ function generate(groupSize, redPool, bluePool, redCount, blueCount){
   const res = [];
   for(let g=0;g<groupSize;g++){
     const red = [], blue = [];
-    // 先随机打乱池，再取前 N 个
     const rp = [...redPool].sort(()=>Math.random()-.5);
     const bp = [...bluePool].sort(()=>Math.random()-.5);
     for(let i=0;i<redCount;i++) red.push(rp[i]);
@@ -102,7 +101,7 @@ function generate(groupSize, redPool, bluePool, redCount, blueCount){
 }
 
 /* ========== 渲染函数 ========== */
-function renderPanel(panelId, list, redLabel, blueLabel){
+function renderPanel(panelId, list){
   const box = document.querySelector(`#${panelId} .result`);
   box.innerHTML = '';
   list.forEach((g,idx)=>{
@@ -117,34 +116,25 @@ function renderPanel(panelId, list, redLabel, blueLabel){
 /* ========== 各玩法逻辑 ========== */
 const logic = {
   async p35(btn){
-    const raw = await getLast('p35');
-    if(!raw) throw '获取排列三/五数据失败';
-    // 用最新开奖号做种子，生成 3 组 5 位号码（前 3 红 0-9，后 2 蓝 0-9）
+    await getLast('p35'); // 仅校验接口通不通
     const redPool = Array.from({length:10},(_,i)=>i);
     const bluePool = redPool;
     const list = generate(3, redPool, bluePool, 3, 2);
-    // 把 5 位拼成字符串方便展示
-    const show = list.map(g=>({
-      red: g.red,
-      blue: g.blue
-    }));
-    renderPanel('panel1', show, 3, 2);
+    renderPanel('panel1', list);
   },
   async dlt(btn){
-    const raw = await getLast('dlt');
-    if(!raw) throw '获取大乐透数据失败';
+    await getLast('dlt');
     const redPool = Array.from({length:35},(_,i)=>i+1);
     const bluePool = Array.from({length:12},(_,i)=>i+1);
     const list = generate(3, redPool, bluePool, 5, 2);
-    renderPanel('panel2', list, 5, 2);
+    renderPanel('panel2', list);
   },
   async ssq(btn){
-    const raw = await getLast('ssq');
-    if(!raw) throw '获取双色球数据失败';
+    await getLast('ssq');
     const redPool = Array.from({length:33},(_,i)=>i+1);
     const bluePool = Array.from({length:16},(_,i)=>i+1);
     const list = generate(3, redPool, bluePool, 6, 1);
-    renderPanel('panel3', list, 6, 1);
+    renderPanel('panel3', list);
   }
 };
 
@@ -152,15 +142,13 @@ const logic = {
 document.querySelectorAll('.start').forEach(btn=>{
   btn.addEventListener('click', async ()=>{
     const game = btn.dataset.game;
-    btn.disabled = true;
-    btn.textContent = '计算中…';
+    btn.disabled = true; btn.textContent = '计算中…';
     try{
       await logic[game](btn);
     }catch(e){
-      alert(e);
+      alert('获取数据失败：' + e);
     }finally{
-      btn.disabled = false;
-      btn.textContent = '开始';
+      btn.disabled = false; btn.textContent = '开始';
     }
   });
 });
